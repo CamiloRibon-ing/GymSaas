@@ -136,7 +136,7 @@ export const GymDataProvider = ({ children }) => {
 
   const loadFromDatabase = async (gymId, userId) => {
     try {
-      console.log('🔄 Cargando datos desde BD...');
+      // console.log('🔄 Cargando datos desde BD...');
       
       // Cargar usuarios de la BD
       const dbUsers = await dbAPI.getUsersFromDB(gymId);
@@ -186,6 +186,7 @@ export const GymDataProvider = ({ children }) => {
         }
       } else {
         console.log('⚠️ No hay usuarios en BD, usando datos por defecto');
+          // console.log('⚠️ No hay usuarios en BD, usando datos por defecto');
         loadDefaultData();
       }
 
@@ -194,6 +195,7 @@ export const GymDataProvider = ({ children }) => {
         const dbNutritionPlans = await dbAPI.getNutritionPlansFromDB(userId);
         if (dbNutritionPlans && dbNutritionPlans.length > 0) {
           console.log(`✅ ${dbNutritionPlans.length} planes nutricionales cargados desde BD`);
+            // console.log(`✅ ${dbNutritionPlans.length} planes nutricionales cargados desde BD`);
           setNutritionPlans(dbNutritionPlans);
           localStorage.setItem('gym_nutrition_plans', JSON.stringify(dbNutritionPlans));
         }
@@ -228,6 +230,7 @@ export const GymDataProvider = ({ children }) => {
           currentUser.profile.gym_id
         );
         console.log('✅ Rutina guardada en BD');
+        // console.log('✅ Rutina guardada en BD');
       } catch (error) {
         console.error('❌ Error guardando rutina en BD:', error);
       }
@@ -273,6 +276,7 @@ export const GymDataProvider = ({ children }) => {
       try {
         await dbAPI.saveNutritionPlanToDB(newPlan, plan.assignedTo, currentUser.profile.id);
         console.log('✅ Plan nutricional guardado en BD');
+        // console.log('✅ Plan nutricional guardado en BD');
       } catch (error) {
         console.error('❌ Error guardando plan nutricional en BD:', error);
       }

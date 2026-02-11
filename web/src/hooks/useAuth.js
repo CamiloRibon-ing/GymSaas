@@ -15,7 +15,7 @@ export function useAuth() {
           console.error("Error obteniendo sesión:", error.message);
           setUser(null);
         } else {
-          console.log("Sesión inicial:", session?.user?.email || "No hay usuario");
+          // console.log("Sesión inicial:", session?.user?.email || "No hay usuario");
           setUser(session?.user ?? null);
         }
       } catch (error) {
@@ -30,7 +30,7 @@ export function useAuth() {
 
     // Escuchar cambios de autenticación
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('Auth state change:', event, session?.user?.email || "Sin usuario");
+      // console.log('Auth state change:', event, session?.user?.email || "Sin usuario");
       
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
         setUser(session?.user ?? null);
@@ -52,7 +52,7 @@ export function useAuth() {
     logout: async () => {
       try {
         setLoading(true);
-        console.log('Iniciando logout...');
+        // console.log('Iniciando logout...');
         
         const { error } = await supabase.auth.signOut();
         if (error) {
@@ -62,7 +62,7 @@ export function useAuth() {
         
         // Limpiar el estado
         setUser(null);
-        console.log('Logout exitoso');
+        // console.log('Logout exitoso');
         
         // Redireccionar al login
         window.location.href = '/';

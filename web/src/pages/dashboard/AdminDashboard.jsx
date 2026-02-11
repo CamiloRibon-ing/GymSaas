@@ -19,115 +19,50 @@ import "../../styles/dashboard.css";
 export default function AdminDashboard() {
   // Obtener perfil y loading ANTES de cualquier uso de profile
   const { profile, loading } = useProfile();
-  // Evitar renderizar si el perfil está cargando o no existe
-  if (loading || !profile) {
-    return <div style={{ padding: 40, textAlign: 'center', color: '#1976d2', fontWeight: 700, fontSize: 22 }}>Cargando perfil...</div>;
-  }
-  // Soporte/ticket modal state
+  // Declarar todos los hooks SIEMPRE antes de cualquier return condicional o lógica
   const [showSupportModal, setShowSupportModal] = useState(false);
   const supportSubjectRef = useRef();
   const supportMsgRef = useRef();
   const [supportStatus, setSupportStatus] = useState(null);
   const [myTickets, setMyTickets] = useState([]);
   const [loadingTickets, setLoadingTickets] = useState(false);
-
-    // Cargar tickets de soporte del gimnasio actual
-    useEffect(() => {
-      let channel;
-      async function fetchTickets() {
-        if (!profile?.gym_id) return;
-        setLoadingTickets(true);
-        const { data, error } = await supabase
-          .from('support_tickets')
-          .select('id, subject, description, status, created_at, updated_at')
-          .eq('gym_id', profile.gym_id)
-          .order('created_at', { ascending: false });
-        if (!error) setMyTickets(data || []);
-        setLoadingTickets(false);
-      }
-      if (showSupportModal && profile?.gym_id) {
-        fetchTickets();
-        // Suscripción en tiempo real a cambios en support_tickets
-        channel = supabase.channel('support_tickets_admin')
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'support_tickets' }, payload => {
-            // Solo refrescar si el ticket es de este gimnasio
-            if (payload.new?.gym_id === profile.gym_id || payload.old?.gym_id === profile.gym_id) {
-              fetchTickets();
-            }
-          })
-          .subscribe();
-      }
-      return () => {
-        if (channel) channel.unsubscribe();
-      };
-    }, [showSupportModal, profile]);
-
-    // Enviar ticket de soporte
-    async function handleSupportSubmit(e) {
-      e.preventDefault();
-      setSupportStatus(null);
-      const subject = supportSubjectRef.current.value.trim();
-      const message = supportMsgRef.current.value.trim();
-      if (!subject || !message) {
-        setSupportStatus({ success: false, message: 'Completa todos los campos.' });
-        return;
-      }
-      try {
-        if (!profile?.gym_id) {
-          setSupportStatus({ success: false, message: 'No se detectó el gimnasio. No se puede enviar el ticket.' });
-          toast.error('No se detectó el gimnasio. No se puede enviar el ticket.', { position: 'top-right', autoClose: 3500, style: { fontWeight: 600, fontSize: 16 } });
-          return;
-        }
-        // Insertar ticket en la tabla support_tickets (usando description y gym_id requerido)
-        const { data, error } = await supabase
-          .from('support_tickets')
-          .insert([
-            {
-              subject,
-              description: message,
-              status: 'abierto',
-              created_at: new Date().toISOString(),
-              gym_id: profile.gym_id,
-              user_id: profile?.id || null
-            }
-          ]);
-        if (error) throw error;
-        setSupportStatus({ success: true, message: '✅ Ticket enviado correctamente. Nuestro equipo te contactará pronto.' });
-        toast.success('✅ Ticket enviado correctamente. Nuestro equipo te contactará pronto.', { position: 'top-right', autoClose: 3500, style: { fontWeight: 600, fontSize: 16 } });
-        supportSubjectRef.current.value = '';
-        supportMsgRef.current.value = '';
-        setTimeout(() => {
-          setShowSupportModal(false);
-          setSupportStatus(null);
-        }, 1800);
-        // Refrescar tickets después de enviar
-        setTimeout(() => {
-          if (profile?.gym_id) {
-            supabase
-              .from('support_tickets')
-              .select('id, subject, description, status, created_at, updated_at')
-              .eq('gym_id', profile.gym_id)
-              .order('created_at', { ascending: false })
-              .then(({ data, error }) => {
-                if (!error) setMyTickets(data || []);
-              });
-          }
-        }, 1000);
-      } catch (err) {
-        setSupportStatus({ success: false, message: 'Error enviando el ticket. Intenta de nuevo.' });
-        toast.error('Error enviando el ticket. Intenta de nuevo.', { position: 'top-right', autoClose: 3500, style: { fontWeight: 600, fontSize: 16 } });
-      }
-    }
-  // Eliminada declaración duplicada de useProfile
   const [currentPage, setCurrentPage] = useState("dashboard");
-  // Métricas reales
   const [memberCount, setMemberCount] = useState(0);
   const [monthRevenue, setMonthRevenue] = useState(0);
   const [routineCount, setRoutineCount] = useState(0);
   const [coachCount, setCoachCount] = useState(0);
   const [nutritionCount, setNutritionCount] = useState(0);
-
-
+  // useEffect para soporte
+  useEffect(() => {
+    let channel;
+    async function fetchTickets() {
+      if (!profile?.gym_id) return;
+      setLoadingTickets(true);
+      const { data, error } = await supabase
+        .from('support_tickets')
+        .select('id, subject, description, status, created_at, updated_at')
+        .eq('gym_id', profile.gym_id)
+        .order('created_at', { ascending: false });
+      if (!error) setMyTickets(data || []);
+      setLoadingTickets(false);
+    }
+    if (showSupportModal && profile?.gym_id) {
+      fetchTickets();
+      // Suscripción en tiempo real a cambios en support_tickets
+      channel = supabase.channel('support_tickets_admin')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'support_tickets' }, payload => {
+          // Solo refrescar si el ticket es de este gimnasio
+          if (payload.new?.gym_id === profile.gym_id || payload.old?.gym_id === profile.gym_id) {
+            fetchTickets();
+          }
+        })
+        .subscribe();
+    }
+    return () => {
+      if (channel) channel.unsubscribe();
+    };
+  }, [showSupportModal, profile]);
+  // useEffect para métricas
   useEffect(() => {
     async function fetchStats() {
       if (!profile?.gym_id) return;
@@ -188,6 +123,70 @@ export default function AdminDashboard() {
     }
     fetchStats();
   }, [profile]);
+  // Evitar renderizar si el perfil está cargando o no existe
+  if (loading || !profile) {
+    return <div style={{ padding: 40, textAlign: 'center', color: '#1976d2', fontWeight: 700, fontSize: 22 }}>Cargando perfil...</div>;
+  }
+
+    // Enviar ticket de soporte
+    async function handleSupportSubmit(e) {
+      e.preventDefault();
+      setSupportStatus(null);
+      const subject = supportSubjectRef.current.value.trim();
+      const message = supportMsgRef.current.value.trim();
+      if (!subject || !message) {
+        setSupportStatus({ success: false, message: 'Completa todos los campos.' });
+        return;
+      }
+      try {
+        if (!profile?.gym_id) {
+          setSupportStatus({ success: false, message: 'No se detectó el gimnasio. No se puede enviar el ticket.' });
+          toast.error('No se detectó el gimnasio. No se puede enviar el ticket.', { position: 'top-right', autoClose: 3500, style: { fontWeight: 600, fontSize: 16 } });
+          return;
+        }
+        // Insertar ticket en la tabla support_tickets (usando description y gym_id requerido)
+        const { data, error } = await supabase
+          .from('support_tickets')
+          .insert([
+            {
+              subject,
+              description: message,
+              status: 'abierto',
+              created_at: new Date().toISOString(),
+              gym_id: profile.gym_id,
+              user_id: profile?.id || null
+            }
+          ]);
+        if (error) throw error;
+        setSupportStatus({ success: true, message: '✅ Ticket enviado correctamente. Nuestro equipo te contactará pronto.' });
+        toast.success('✅ Ticket enviado correctamente. Nuestro equipo te contactará pronto.', { position: 'top-right', autoClose: 3500, style: { fontWeight: 600, fontSize: 16 } });
+        supportSubjectRef.current.value = '';
+        supportMsgRef.current.value = '';
+        setTimeout(() => {
+          setShowSupportModal(false);
+          setSupportStatus(null);
+        }, 1800);
+        // Refrescar tickets después de enviar
+        setTimeout(() => {
+          if (profile?.gym_id) {
+            supabase
+              .from('support_tickets')
+              .select('id, subject, description, status, created_at, updated_at')
+              .eq('gym_id', profile.gym_id)
+              .order('created_at', { ascending: false })
+              .then(({ data, error }) => {
+                if (!error) setMyTickets(data || []);
+              });
+          }
+        }, 1000);
+      } catch (err) {
+        setSupportStatus({ success: false, message: 'Error enviando el ticket. Intenta de nuevo.' });
+        toast.error('Error enviando el ticket. Intenta de nuevo.', { position: 'top-right', autoClose: 3500, style: { fontWeight: 600, fontSize: 16 } });
+      }
+    }
+  // ...existing code...
+  // ...declaraciones duplicadas eliminadas...
+
 
   const handleSuperAdminChange = (e) => {
     setSuperAdminForm({ ...superAdminForm, [e.target.name]: e.target.value });
