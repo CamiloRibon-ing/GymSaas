@@ -1,4 +1,3 @@
-// ...existing code...
 
 import Loader from '../../components/ui/Loader';
 import { useState, useEffect } from "react";
@@ -15,8 +14,9 @@ import {
   getCoachRoutines,
   saveWeeklyRoutine as saveWeeklyRoutineToDB,
   getWeeklyRoutine,
+  getWeeklyRoutines,
   createNutritionPlan,
-  getCoachNutritionPlans,
+  getAllNutritionPlans,
   getAssignedMembersForSelect
 } from '../../api/routines.api';
 import "../../styles/dashboard.css";
@@ -92,106 +92,28 @@ export default function CoachDashboard() {
     ]
   });
 
-      {/* Modal para Editar Rutina (semanal o personalizada) */}
-      {showEditRoutine && selectedRoutine && (
-        <div className="modal-overlay">
-          <div className="modal-content-large">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <h3>
-                {routineType === 'weekly' ? '✏️ Editar Rutina Semanal General' : `✏️ Editar Rutina de ${selectedRoutine.clientName || 'Miembro'}`}
-              </h3>
-              <button 
-                onClick={() => setShowEditRoutine(false)} 
-                className="btn-secondary"
-                style={{ padding: '5px 10px' }}
-              >
-                ✖ Cerrar
-              </button>
-            </div>
-            <div className="edit-routine-form">
-              {routineType === 'weekly' ? (
-                <>
-                  <div className="routine-edit-modal">
-                    <h3 className="routine-title">Editar Rutina Semanal</h3>
-                    <div className="routine-days-grid">
-                      {selectedRoutine.days?.map(day => (
-                        <div key={day.name} className="routine-day-card">
-                          <h4 className="routine-day-title">{day.name}</h4>
-                          <div className="day-exercises">
-                            {day.exercises.map(exercise => (
-                              <div key={exercise.id} className="exercise-row">
-                                <input 
-                                  type="text" 
-                                  value={exercise.name}
-                                  onChange={(e) => updateWeeklyExercise(day.name, exercise.id, 'name', e.target.value)}
-                                  className="exercise-name-edit" 
-                                  placeholder="Nombre del ejercicio"
-                                />
-                                <input 
-                                  type="number" 
-                                  value={exercise.sets}
-                                  onChange={(e) => updateWeeklyExercise(day.name, exercise.id, 'sets', parseInt(e.target.value))}
-                                  className="exercise-sets-edit" 
-                                  placeholder="Series" 
-                                />
-                                <input 
-                                  type="number" 
-                                  value={exercise.reps}
-                                  onChange={(e) => updateWeeklyExercise(day.name, exercise.id, 'reps', parseInt(e.target.value))}
-                                  className="exercise-reps-edit" 
-                                  placeholder="Reps" 
-                                />
-                                <input 
-                                  type="text" 
-                                  value={exercise.weight}
-                                  onChange={(e) => updateWeeklyExercise(day.name, exercise.id, 'weight', e.target.value)}
-                                  className="exercise-weight-edit" 
-                                  placeholder="Peso/Tiempo" 
-                                />
-                                <button 
-                                  className="btn-remove-small"
-                                  onClick={() => removeExerciseFromWeekDay(day.name, exercise.id)}
-                                >
-                                  🗑️
-                                </button>
-                              </div>
-                            ))}
-                            <button 
-                              className="btn-add-exercise-small"
-                              onClick={() => addExerciseToWeekDay(day.name)}
-                            >
-                              + Agregar Ejercicio
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="form-actions">
-                      <button 
-                        className="btn-primary"
-                        onClick={saveWeeklyRoutine}
-                      >
-                        💾 Guardar Cambios
-                      </button>
-                      <button 
-                        className="btn-secondary"
-                        onClick={() => setShowEditRoutine(false)}
-                      >
-                        ❌ Cancelar
-                      </button>
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <>
-                  {/* Formulario de edición de rutina personalizada (igual al actual) */}
-                  {/* ...existing code for personalized routine form... */}
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+  // Estado para mostrar el modal de historial de rutinas semanales generales
+  const [showWeeklyHistoryModal, setShowWeeklyHistoryModal] = useState(false);
+  // Estado para guardar el historial de rutinas semanales generales
+  const [weeklyRoutinesHistory, setWeeklyRoutinesHistory] = useState([]);
+
+  // Efecto para cargar el historial de rutinas semanales generales cuando se abre el modal
+  useEffect(() => {
+    if (showWeeklyHistoryModal) {
+      const fetchWeeklyRoutinesHistory = async () => {
+        if (!profile?.gym_id) return;
+        const res = await getWeeklyRoutines(profile.gym_id);
+        if (!res.success) {
+          toast.error('Error al cargar el historial de rutinas semanales');
+        } else {
+          setWeeklyRoutinesHistory(res.routines || []);
+        }
+      };
+      fetchWeeklyRoutinesHistory();
+    }
+  }, [showWeeklyHistoryModal]);
+
+
   
   const loadCoachRoutines = async () => {
     try {
@@ -212,15 +134,16 @@ export default function CoachDashboard() {
   
   const loadNutritionPlans = async () => {
     try {
-      const result = await getCoachNutritionPlans();
+      if (!profile?.gym_id) return;
+      const result = await getAllNutritionPlans(profile.gym_id);
       if (result.success) {
         setNutritionPlans(result.nutritionPlans);
-        console.log('✅ Planes nutricionales cargados:', result.nutritionPlans.length);
+        console.log('✅ Planes alimenticios cargados:', result.nutritionPlans.length);
       } else {
-        console.error('❌ Error cargando planes nutricionales:', result.error);
+        console.error('❌ Error cargando planes alimenticios:', result.error);
       }
     } catch (error) {
-      console.error('❌ Error cargando planes nutricionales:', error);
+      console.error('❌ Error cargando planes alimenticios:', error);
     }
   };
   
@@ -791,7 +714,7 @@ export default function CoachDashboard() {
   }
   
   if (currentPage === 'nutrition') {
-    return <ManageNutrition onBack={handleBackToDashboard} />;
+    return <ManageNutrition onBack={handleBackToDashboard} nutritionPlans={nutritionPlans} />;
   }
 
   return (
@@ -861,15 +784,7 @@ export default function CoachDashboard() {
               <div>Progreso de Clientes</div>
             </div>
             
-            {/* Botones de prueba para BD */}
-            <div className="action-btn test-db-btn" onClick={handleTestDatabase}>
-              <span>🔍</span>
-              <div>Probar BD</div>
-            </div>
-            <div className="action-btn test-db-btn" onClick={handleMigrateData}>
-              <span>🔄</span>
-              <div>Migrar Datos</div>
-            </div>
+            {/* ...otros botones de acción rápida... */}
           </div>
         </div>
 
@@ -909,6 +824,7 @@ export default function CoachDashboard() {
 
         <div className="dashboard-section">
           <h2>Mi Rendimiento</h2>
+          {/* Botón eliminado para evitar superposición */}
           <div className="progress-section">
             <div className="progress-item">
               <span className="progress-label">Clientes Satisfechos</span>
@@ -1568,6 +1484,68 @@ export default function CoachDashboard() {
               </button>
             </div>
             <div className="weekly-routine-form">
+              <div style={{marginBottom:'16px'}}>
+                <button className="btn-secondary" onClick={() => setShowWeeklyHistoryModal(true)}>
+                  📜 Ver historial de rutinas semanales
+                </button>
+              </div>
+                    {/* Modal aparte para historial de rutinas semanales */}
+                    {showWeeklyHistoryModal && (
+                      <div className="modal-overlay">
+                        <div className="modal-content-large">
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                            <h3>📜 Historial de Rutinas Semanales</h3>
+                            <button 
+                              onClick={() => setShowWeeklyHistoryModal(false)} 
+                              className="btn-secondary"
+                              style={{ padding: '5px 10px' }}
+                            >
+                              ✖ Cerrar
+                            </button>
+                          </div>
+                          <div className="weekly-history-section">
+                            {weeklyRoutinesHistory.length === 0 ? (
+                              <div style={{color:'#888'}}>No hay rutinas semanales creadas aún.</div>
+                            ) : (
+                              weeklyRoutinesHistory.map(routine => (
+                                <div key={routine.id} className="weekly-history-card" style={{background:'#e3f2fd',border:'1px solid #90caf9',borderRadius:8,padding:12,marginBottom:12}}>
+                                  <h5 style={{marginBottom:4}}>{routine.name || 'Sin nombre'}</h5>
+                                  <p style={{marginBottom:4}}><strong>Descripción:</strong> {routine.description || '-'}</p>
+                                  <p style={{marginBottom:4}}><strong>Estado:</strong> {routine.status === 'active' ? '🟢 Activa' : '⚪ Inactiva'}</p>
+                                  <p style={{marginBottom:4}}><strong>Creada:</strong> {routine.created_at ? new Date(routine.created_at).toLocaleString() : '-'}</p>
+                                  {/* Renderizar días y ejercicios si existen */}
+                                  <div className="weekly-days-container">
+                                    {['monday','tuesday','wednesday','thursday','friday','saturday','sunday'].map(dayKey => {
+                                      const dayObj = routine[dayKey];
+                                      if (!dayObj) return null;
+                                      return (
+                                        <div key={dayObj.name} className="weekly-day-section">
+                                          <h6>{dayObj.name}</h6>
+                                          <div className="day-exercises">
+                                            {Array.isArray(dayObj.exercises) && dayObj.exercises.length > 0 ? (
+                                              dayObj.exercises.map(exercise => (
+                                                <div key={exercise.id || exercise.name} className="exercise-row">
+                                                  <span><strong>{exercise.name}</strong></span>
+                                                  <span>Series: {exercise.sets}</span>
+                                                  <span>Reps: {exercise.reps}</span>
+                                                  <span>Peso/Intensidad: {exercise.weight}</span>
+                                                </div>
+                                              ))
+                                            ) : (
+                                              <div className="exercise-row-empty">No hay ejercicios asignados.</div>
+                                            )}
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
               <div className="info-section" style={{ marginBottom: '20px', padding: '15px', background: '#f0f8ff', borderRadius: '8px' }}>
                 <p><strong>📢 Nota:</strong> Esta rutina semanal será visible para todos los miembros como "Rutina General del Gimnasio".</p>
                 <p>Los miembros con planes personalizados verán tanto su rutina personal como esta rutina general.</p>

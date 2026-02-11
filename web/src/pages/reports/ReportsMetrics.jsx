@@ -48,7 +48,9 @@ export default function ReportsMetrics({ onBack }) {
           .from('attendance')
           .select('*')
           .eq('gym_id', profile.gym_id);
+        let attendanceData = [];
         if (attendance) {
+          attendanceData = attendance;
           // Agrupar por miembro
           const visitsByMember = {};
           attendance.forEach(a => {
@@ -97,11 +99,18 @@ export default function ReportsMetrics({ onBack }) {
           { name: "Bicicletas Estáticas", utilization: 56, status: "Bajo Uso", maintenance: "Próxima: 28 Feb" }
         ];
 
-        // Distribución de membresías (requiere tabla memberships)
+        // Distribución de membresías (requiere tabla memberships y plans para nombre)
         let membershipTrends = [];
         const { data: memberships, error: membershipsError } = await supabase
           .from('memberships')
           .select('plan_id, status');
+        let planNames = {};
+        const { data: plans, error: plansError } = await supabase
+          .from('plans')
+          .select('id, name');
+        if (plans) {
+          plans.forEach(p => { planNames[p.id] = p.name; });
+        }
         if (memberships) {
           // Agrupar por tipo de plan
           const planCounts = {};
@@ -110,7 +119,7 @@ export default function ReportsMetrics({ onBack }) {
           });
           const total = memberships.length || 1;
           membershipTrends = Object.entries(planCounts).map(([type, count]) => ({
-            type,
+            type: planNames[type] || type,
             count,
             percentage: ((count/total)*100).toFixed(1),
             trend: 'stable'
@@ -135,6 +144,7 @@ export default function ReportsMetrics({ onBack }) {
             lowDays,
             monthlyComparison
           },
+          attendanceData,
           equipment,
           membershipTrends
         });
@@ -434,16 +444,31 @@ export default function ReportsMetrics({ onBack }) {
 
       <div className="dashboard-section">
         <h2>Métricas Clave</h2>
-        <div className="key-metrics">
-          <div className="metric-item">
+        <div className="key-metrics" style={{display:'flex',flexWrap:'wrap',gap:'2rem',justifyContent:'space-between',overflowX:'auto'}}>
+          <div className="metric-item" style={{minWidth:220,flex:'1 1 220px',maxWidth:300}}>
             <strong>Promedio de Visitas por Miembro</strong>
             <span>{metricsData.overview.avgVisitsPerMember} visitas/mes</span>
           </div>
-          <div className="metric-item">
+          <div className="metric-item" style={{minWidth:220,flex:'1 1 220px',maxWidth:300}}>
             <strong>Horario Pico</strong>
-            <span>{metricsData.overview.peakHours}</span>
+            <span>{metricsData.attendance && metricsData.attendance.weeklyTrend ?
+              (() => {
+                // Calcular hora pico real si hay datos de asistencia
+                const hourCounts = {};
+                if (metricsData.attendance && metricsData.attendance.weeklyTrend && metricsData.attendanceData) {
+                  metricsData.attendanceData.forEach(a => {
+                    const hour = new Date(a.timestamp).getHours();
+                    hourCounts[hour] = (hourCounts[hour] || 0) + 1;
+                  });
+                  const maxCount = Math.max(...Object.values(hourCounts));
+                  const peakHour = Object.keys(hourCounts).find(h => hourCounts[h] === maxCount);
+                  return `${peakHour}:00 - ${parseInt(peakHour)+1}:00`;
+                }
+                return metricsData.overview.peakHours;
+              })()
+            : metricsData.overview.peakHours}</span>
           </div>
-          <div className="metric-item">
+          <div className="metric-item" style={{minWidth:220,flex:'1 1 220px',maxWidth:300}}>
             <strong>Utilización de Equipos</strong>
             <div className="progress-bar">
               <div 

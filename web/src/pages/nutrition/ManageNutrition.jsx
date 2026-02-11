@@ -5,7 +5,7 @@ import { updateNutritionPlan } from '../../api/updateNutritionPlan';
 import { supabase } from '../../supabaseClient';
 import "../../styles/dashboard.css";
 
-export default function ManageNutrition({ onBack }) {
+export default function ManageNutrition({ onBack, nutritionPlans: nutritionPlansProp = [] }) {
     // Estado para edición de plan
     const [editPlanData, setEditPlanData] = useState(null);
   const [showCreatePlan, setShowCreatePlan] = useState(false);
@@ -16,7 +16,7 @@ export default function ManageNutrition({ onBack }) {
   const [loading, setLoading] = useState(true);
 
   // Estados para datos reales de BD
-  const [nutritionPlans, setNutritionPlans] = useState([]);
+  const [nutritionPlans, setNutritionPlans] = useState(nutritionPlansProp || []);
   const [availableMembers, setAvailableMembers] = useState([]);
   
   // Estados para formulario de nuevo plan
@@ -34,7 +34,14 @@ export default function ManageNutrition({ onBack }) {
 
   // Cargar datos al montar el componente
   useEffect(() => {
-    loadNutritionData();
+    if (nutritionPlansProp && nutritionPlansProp.length > 0) {
+      setNutritionPlans(nutritionPlansProp);
+      setLoading(false);
+    } else {
+      loadNutritionData();
+    }
+    // Solo ejecutar una vez al montar
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadNutritionData = async () => {
@@ -72,7 +79,6 @@ export default function ManageNutrition({ onBack }) {
         setAvailableMembers(membersResult.members);
       }
     } catch (error) {
-      console.error('Error cargando datos nutricionales:', error);
       toast.error('Error cargando datos');
     } finally {
       setLoading(false);

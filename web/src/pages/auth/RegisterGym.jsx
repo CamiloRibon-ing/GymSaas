@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import toast from "react-hot-toast";
-import { registerGymAndAdmin } from "../../api/register.api";
+import { registerPendingGym } from "../../api/register.api";
 import "../../styles/auth.css";
 import "../../styles/register-gym.css";
 
@@ -103,92 +103,24 @@ export default function RegisterGym() {
 
     try {
       setLoading(true);
-      toast.loading('Registrando gimnasio...', { id: 'register' });
-      
-      // Modo desarrollo - simular registro exitoso
-      if (developmentMode) {
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        toast.success('🛠️ Registro simulado exitosamente (Modo Desarrollo)', { id: 'register' });
-        
-        setTimeout(() => {
-          navigate('/login', { 
-            state: { 
-              message: 'Registro simulado completado. Usa las credenciales existentes de desarrollo para iniciar sesión.',
-              email: 'admin@powergym.co',
-              devCredentials: true
-            }
-          });
-        }, 2000);
-        return;
-      }
+      toast.loading('Enviando solicitud de registro...', { id: 'register' });
 
-      // Registro real
-      const result = await registerGymAndAdmin(form);
-      
-      toast.success('¡Gimnasio registrado exitosamente!', { id: 'register' });
-      console.log('Registro exitoso:', result);
-      
-      // Mostrar mensaje de confirmación
-      toast.success('Revisa tu email para confirmar tu cuenta', { duration: 4000 });
-      
-      // Redirigir al login después de un breve delay
+      // Guardar solicitud en pending_gyms
+      await registerPendingGym(form);
+      toast.success('¡Solicitud enviada! Un superadmin revisará tu registro.', { id: 'register' });
+
       setTimeout(() => {
-        navigate('/login', { 
-          state: { 
-            message: 'Gimnasio registrado. Revisa tu email y luego inicia sesión.',
+        navigate('/login', {
+          state: {
+            message: 'Solicitud enviada. Espera la aprobación del superadmin.',
             email: form.email,
             type: 'success'
           }
         });
       }, 3000);
-      
     } catch (error) {
-      console.error('Error registrando gimnasio:', error);
-      
-      // Manejo específico de errores
-      let errorMessage = 'Error al registrar gimnasio';
-      let showEmailTip = false;
-      
-      if (error.message?.includes('rate limit')) {
-        errorMessage = '⚠️ Límite de emails excedido. Prueba con un email diferente o espera unos minutos.';
-        showEmailTip = true;
-      } else if (error.message?.includes('email')) {
-        errorMessage = '📧 Problema con el email. Verifica que sea válido y no esté ya registrado.';
-        showEmailTip = true;
-      } else if (error.message?.includes('password')) {
-        errorMessage = '🔒 Error con la contraseña. Debe tener al menos 6 caracteres.';
-      } else if (error.message?.includes('duplicate') || error.message?.includes('unique')) {
-        errorMessage = '🔄 Ya existe un gimnasio con ese nombre o email.';
-      } else if (error.message?.includes('gimnasio')) {
-        errorMessage = error.message;
-      } else if (error.message) {
-        errorMessage = `❌ ${error.message}`;
-      }
-      
-      toast.error(errorMessage, { 
-        id: 'register',
-        duration: 8000 
-      });
-
-      // Mostrar sugerencias adicionales para problemas de email
-      if (showEmailTip) {
-        setTimeout(() => {
-          toast.success('💡 Consejo: Usa un email que nunca hayas usado en Supabase, o activa el Modo Desarrollo', { 
-            duration: 6000 
-          });
-        }, 1000);
-      }
-      
-      // Si es error de rate limit, sugerir usar otro email
-      if (error.message.includes('rate limit')) {
-        setTimeout(() => {
-          toast('💡 Sugerencia: Prueba con otro email o espera unos minutos', {
-            duration: 4000,
-            icon: '💡'
-          });
-        }, 1000);
-      }
-      
+      console.error('Error registrando solicitud:', error);
+      toast.error('Error al enviar la solicitud: ' + (error.message || error), { id: 'register' });
     } finally {
       setLoading(false);
     }
@@ -359,64 +291,7 @@ export default function RegisterGym() {
           <p>¿Ya tienes cuenta? <Link to="/login">Inicia Sesión</Link></p>
         </div>
 
-        {/* Sección de desarrollo */}
-        <div className="dev-section">
-          <p style={{margin: '0 0 0.5rem 0', fontSize: '0.8rem', color: '#856404'}}>
-            🚧 Herramientas de Desarrollo
-          </p>
-          
-          <div className="dev-controls">
-            <button 
-              type="button" 
-              className="btn-dev"
-              onClick={fillTestData}
-            >
-              📝 Llenar Datos de Prueba
-            </button>
-            
-            <label className="dev-toggle">
-              <input 
-                type="checkbox" 
-                checked={developmentMode}
-                onChange={(e) => setDevelopmentMode(e.target.checked)}
-              />
-              <span>🛠️ Modo Desarrollo (Simular Registro)</span>
-            </label>
-
-            <button 
-              type="button" 
-              className="btn-dev btn-help"
-              onClick={() => {
-                toast.success(`
-🔧 CÓMO SOLUCIONAR EL ERROR DE EMAIL:
-
-1. Ve a tu Dashboard de Supabase
-2. Authentication > Settings  
-3. DESACTIVA "Enable email confirmations"
-4. Guarda cambios
-5. Reinicia el registro
-
-O usa el Modo Desarrollo arriba ⬆️`, { 
-                  duration: 10000 
-                });
-              }}
-            >
-              🆘 ¿Error de Email? - Click Aquí
-            </button>
-          </div>
-          
-          {developmentMode && (
-            <div className="dev-warning">
-              ⚠️ Modo desarrollo activado. El registro será simulado sin usar la API real.
-              <br />
-              <strong>Credenciales de desarrollo:</strong>
-              <br />
-              📧 Email: admin@powergym.co
-              <br />
-              🔑 Contraseña: PowerGym2024!
-            </div>
-          )}
-        </div>
+        {/* Sección de desarrollo eliminada por seguridad */}
       </div>
     </div>
   );

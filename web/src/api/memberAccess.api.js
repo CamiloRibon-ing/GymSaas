@@ -1,3 +1,31 @@
+// Crear usuario y perfil superadmin (temporal)
+export async function createSuperAdmin({ email, password, first_name, last_name, phone, status = 'Activo' }) {
+  // 1. Crear usuario en Auth
+  const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+    email,
+    password,
+    options: { emailRedirectTo: window.location.origin + '/login' }
+  });
+  if (signUpError) return { success: false, error: signUpError.message };
+  const userId = signUpData?.user?.id;
+  if (!userId) return { success: false, error: 'No se pudo obtener el ID del usuario.' };
+
+  // 2. Crear perfil en profiles
+  const profilePayload = {
+    id: userId,
+    first_name,
+    last_name,
+    phone,
+    email,
+    role: 'super_admin',
+    gym_id: null,
+    status,
+  };
+  const { error: profileError } = await supabase.from('profiles').insert(profilePayload);
+  if (profileError) return { success: false, error: profileError.message };
+
+  return { success: true, userId };
+}
 // Migrar coach pendiente a perfil y usuario
 export async function migratePendingCoach(pendingId, password) {
   // 1. Obtener datos del coach pendiente

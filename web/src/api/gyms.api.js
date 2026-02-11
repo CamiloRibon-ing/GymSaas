@@ -30,3 +30,15 @@ export async function createGym(gymData) {
   if (error) throw error;
   return data;
 }
+
+// Actualizar el status de un gimnasio (activar/desactivar)
+export async function updateGymStatus(gymId, newStatus) {
+  const { data, error } = await supabase
+    .from('gyms')
+    .update({ status: newStatus })
+    .eq('id', gymId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}

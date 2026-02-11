@@ -141,7 +141,6 @@ export const GymDataProvider = ({ children }) => {
       // Cargar usuarios de la BD
       const dbUsers = await dbAPI.getUsersFromDB(gymId);
       if (dbUsers && dbUsers.length > 0) {
-        console.log(`✅ ${dbUsers.length} usuarios cargados desde BD`);
         
         const dbMembers = dbUsers.filter(user => user.role === 'member');
         const dbCoaches = dbUsers.filter(user => user.role === 'coach');

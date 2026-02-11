@@ -185,3 +185,25 @@ export async function registerGymDirectly(form) {
     throw error;
   }
 }
+
+// Registrar solicitud de gimnasio pendiente
+export async function registerPendingGym(form) {
+  const { data, error } = await supabase
+    .from("pending_gyms")
+    .insert({
+      name: form.gymName,
+      address: form.gymAddress,
+      phone: form.gymPhone,
+      email: form.gymEmail || form.email, // fallback
+      admin_first_name: form.firstName,
+      admin_last_name: form.lastName,
+      admin_phone: form.phone,
+      admin_email: form.email,
+      notes: '',
+      status: 'pendiente',
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}

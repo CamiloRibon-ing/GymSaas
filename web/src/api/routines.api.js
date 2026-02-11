@@ -1,3 +1,21 @@
+// Obtener todos los planes alimenticios del gimnasio (admin y coach)
+export const getAllNutritionPlans = async (gymId) => {
+  try {
+    const { data, error } = await supabase
+      .from('nutrition_plans')
+      .select('*')
+      .eq('gym_id', gymId)
+      .order('created_at', { ascending: false });
+    if (error) {
+      console.error('Error obteniendo todos los planes alimenticios:', error);
+      throw error;
+    }
+    return { success: true, nutritionPlans: data || [] };
+  } catch (error) {
+    console.error('❌ Error obteniendo todos los planes alimenticios:', error);
+    return { success: false, error: error.message };
+  }
+}
 // Obtener un plan nutricional por ID con todos los campos y miembros asignados
 export const getNutritionPlanById = async (planId) => {
   try {
@@ -104,11 +122,11 @@ export const getWeeklyRoutines = async (gymId) => {
         7: 'sunday'
       };
       const routineWithDays = { ...routine, days: daysWithExercises };
-      // Agregar ejercicios por clave numérica y nombre
+      // Agregar días completos por clave numérica y nombre
       daysWithExercises.forEach(day => {
-        routineWithDays[day.day_order] = day.exercises || [];
+        routineWithDays[day.day_order] = { ...day, exercises: day.exercises };
         const key = dayMap[day.day_order];
-        if (key) routineWithDays[key] = day.exercises || [];
+        if (key) routineWithDays[key] = { ...day, exercises: day.exercises };
       });
       return routineWithDays;
     }));
@@ -650,8 +668,6 @@ export const getWeeklyRoutine = async () => {
         exercises: []
       };
     });
-    // Log para depuración: mostrar estructura final
-    console.log('✅ Rutina semanal obtenida (estructura completa):', routine);
     return { success: true, weeklyRoutine: routine };
   } catch (error) {
     console.error('❌ Error obteniendo rutina semanal:', error);
@@ -672,11 +688,7 @@ export const getMemberPersonalRoutines = async (memberId) => {
       .not('assigned_to', 'is', null)
       .order('created_at', { ascending: false });
     if (error) throw error;
-    // Log para depuración: mostrar memberId y assigned_to de cada rutina
-    console.log('[DEBUG] memberId buscado:', memberId);
-    (routines || []).forEach(r => {
-      console.log('[DEBUG] Rutina', r.id, 'assigned_to:', r.assigned_to);
-    });
+    // ...
     // Filtrar en JS las rutinas donde assigned_to incluye el memberId
     const filtered = (routines || []).filter(r => Array.isArray(r.assigned_to) && r.assigned_to.includes(memberId));
     // Para cada rutina, obtener días y ejercicios

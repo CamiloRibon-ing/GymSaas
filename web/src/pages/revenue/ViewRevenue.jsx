@@ -1,4 +1,9 @@
 import { useState, useEffect } from 'react';
+import jsPDF from 'jspdf';
+import logoImage from '../../assets/image.png';
+import WompiWidgetButton from '../../components/WompiWidgetButton';
+import WompiWidgetWithSignature from '../../components/WompiWidgetWithSignature';
+import { getWompiSignature } from '../../api/wompiSignature.api';
 import { ResponsivePie } from '@nivo/pie';
 import { ResponsiveBar } from '@nivo/bar';
 
@@ -33,23 +38,372 @@ const renderCustomBarTooltip = ({ active, payload, label }) => {
   return null;
 };
 import { useProfile } from '../../hooks/useProfile';
+import { useGymInfo } from '../../hooks/useGymInfo';
 import { supabase } from '../../supabaseClient';
 import { toast } from 'react-hot-toast';
 import '../../styles/dashboard.css';
+import Modal from '../../components/ui/Modal';
+import { createFactusInvoice, getFactusInvoicePDF, getFactusInvoiceXML } from '../../api/factusInvoice.api';
+import { getFactusPayments } from '../../api/factusPayments.api';
 
 export default function ViewRevenue({ onBack }) {
-  const { profile } = useProfile();
+  // Pagos Factus (debe estar dentro del componente)
+  const [factusPayments, setFactusPayments] = useState([]);
+  const [loadingFactusPayments, setLoadingFactusPayments] = useState(false);
+  // Elimina una factura solo en el frontend
+  const handleDeletePayment = (idx) => {
+    if (window.confirm('¿Seguro que deseas eliminar esta factura de la lista?')) {
+      setFactusPayments(payments => payments.filter((_, i) => i !== idx));
+    }
+  };
+
+  useEffect(() => {
+    async function fetchFactusPayments() {
+      setLoadingFactusPayments(true);
+      try {
+        const pagos = await getFactusPayments();
+        console.log('[FACTUS][FRONTEND][PAGOS] factusPayments recibidos:', pagos);
+        // Buscar si la factura recién creada está en la lista
+        const idBuscado = 'cd7c3d1e-57ff-4bb1-95df-c93eb7e57196';
+        const encontrada = Array.isArray(pagos) && pagos.find(p => (p.reference_code || p.reference || p.invoice_id) === `GYM-${idBuscado}`);
+        if (encontrada) {
+          console.log('[FACTUS][FRONTEND][PAGOS] ¡Factura recién creada encontrada en la lista!', encontrada);
+        } else {
+          console.warn('[FACTUS][FRONTEND][PAGOS] La factura recién creada NO aparece en la lista.');
+        }
+        // Si la respuesta es {data: [...], pagination: {...}}, usar data
+        if (pagos && Array.isArray(pagos.data)) {
+          setFactusPayments(pagos.data);
+        } else if (Array.isArray(pagos)) {
+          setFactusPayments(pagos);
+        } else {
+          setFactusPayments([]);
+        }
+      } catch (err) {
+        toast.error('Error cargando pagos Factus');
+      } finally {
+        setLoadingFactusPayments(false);
+      }
+    }
+    fetchFactusPayments();
+  }, []);
+
+  // Descargar PDF oficial de Factus
+  const handleDownloadFactusPDF = async (invoiceId, memberName) => {
+    try {
+      const blob = await getFactusInvoicePDF(invoiceId);
+      const url = window.URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `Factura_Factus_${memberName || invoiceId}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.parentNode.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      toast.error('No se pudo descargar el PDF de Factus');
+    }
+  };
+
+  // Descargar XML oficial de Factus
+  const handleDownloadFactusXML = async (invoiceId, memberName) => {
+    try {
+      const blob = await getFactusInvoiceXML(invoiceId);
+      const url = window.URL.createObjectURL(new Blob([blob], { type: 'application/xml' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `Factura_Factus_${memberName || invoiceId}.xml`);
+      document.body.appendChild(link);
+      link.click();
+      link.parentNode.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      toast.error('No se pudo descargar el XML de Factus');
+    }
+  };
+
+  // Ver PDF oficial de Factus
+  const handleViewFactusPDF = async (invoiceId) => {
+    try {
+      const blob = await getFactusInvoicePDF(invoiceId);
+      const url = window.URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }));
+      window.open(url, '_blank');
+      setTimeout(() => window.URL.revokeObjectURL(url), 10000);
+    } catch (err) {
+      toast.error('No se pudo abrir el PDF de Factus');
+    }
+  };
+
+  // All state declarations must come first
+  const [showWompiModal, setShowWompiModal] = useState(false);
   const [revenueData, setRevenueData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [selectedPeriod, setSelectedPeriod] = useState('month');
   const [showPendingPayments, setShowPendingPayments] = useState(false);
   const [showDetailedAnalysis, setShowDetailedAnalysis] = useState(false);
-    const [showRegisterPayment, setShowRegisterPayment] = useState(false);
-    const [membersList, setMembersList] = useState([]);
-    const [plansList, setPlansList] = useState([]);
-    const [registerForm, setRegisterForm] = useState({ member_id: '', payment_type: 'mensualidad', amount: '', plan_id: '', notes: '' });
-    const [registerLoading, setRegisterLoading] = useState(false);
+  const [showRegisterPayment, setShowRegisterPayment] = useState(false);
+  const [membersList, setMembersList] = useState([]);
+  const [membersPage, setMembersPage] = useState(1);
+  const membersPerPage = 10;
+  const [plansList, setPlansList] = useState([]);
+  const [registerForm, setRegisterForm] = useState({ member_id: '', payment_type: 'mensualidad', amount: '', plan_id: '', notes: '' });
+  const [registerLoading, setRegisterLoading] = useState(false);
   const [pendingPayments, setPendingPayments] = useState([]);
+  // Factus
+  const [showFactusModal, setShowFactusModal] = useState(false);
+  const [factusForm, setFactusForm] = useState({ member_id: '', plan_id: '', amount: '', notes: '' });
+  const [factusLoading, setFactusLoading] = useState(false);
+  const [factusError, setFactusError] = useState('');
+  // Wompi Sandbox Public Key (reemplaza por la tuya si tienes)
+  const WOMPI_PUBLIC_KEY = 'pub_test_iozpGauBrG9OXVbVQqDPOJYpo3ijcr7C';
+
+  // Hooks (must come after state)
+  const { profile } = useProfile();
+  const { gym } = useGymInfo(profile?.gym_id);
+
+  // Cargar miembros y planes al abrir modal Factus
+  useEffect(() => {
+    if (showFactusModal && membersList.length === 0) {
+      // Ya se cargan en el flujo normal, pero si no, podrías forzar aquí
+    }
+  }, [showFactusModal]);
+
+  const handleOpenFactusModal = () => {
+    setFactusForm({ member_id: '', plan_id: '', amount: '', notes: '' });
+    setFactusError('');
+    setShowFactusModal(true);
+  };
+
+  const handleFactusSubmit = async (e) => {
+    e.preventDefault();
+    setFactusLoading(true);
+    setFactusError('');
+    try {
+      const member = membersList.find(m => m.id === factusForm.member_id);
+      const plan = plansList.find(p => p.id === factusForm.plan_id);
+      if (!member || !plan) throw new Error('Selecciona miembro y plan');
+      // Buscar el pago más reciente para ese miembro y plan
+      const { data: payments, error: paymentsError } = await supabase
+        .from('payments')
+        .select('id')
+        .eq('member_id', member.id)
+        .eq('plan_id', plan.id)
+        .order('paid_at', { ascending: false })
+        .limit(1);
+      let payment_id;
+      if (!payments || payments.length === 0) {
+        // Si no existe el pago, crearlo
+        const { data: newPayment, error: newPaymentError } = await supabase
+          .from('payments')
+          .insert([
+            {
+              member_id: member.id,
+              plan_id: plan.id,
+              gym_id: gym?.id,
+              amount: plan.price,
+              payment_type: 'mensualidad',
+              paid_at: new Date().toISOString(),
+              status: 'Completado'
+            }
+          ])
+          .select('id')
+          .single();
+        if (newPaymentError || !newPayment) throw new Error('No se pudo crear el pago');
+        payment_id = newPayment.id;
+      } else {
+        payment_id = payments[0].id;
+      }
+      console.log('[FACTUS][FRONTEND] Enviando payment_id al backend:', payment_id);
+      const factusResponse = await createFactusInvoice(payment_id);
+      console.log('[FACTUS][FRONTEND] Respuesta del backend:', factusResponse);
+      // Puedes mostrar el response en pantalla si lo necesitas
+      toast.success('Factura creada exitosamente');
+      setShowFactusModal(false);
+    } catch (err) {
+      setFactusError(err.message || 'Error al crear factura');
+    } finally {
+      setFactusLoading(false);
+    }
+  };
+
+  // Functions that use state/hooks
+
+  // Utilidad para convertir imagen a base64 y luego generar el PDF
+  const handleDownloadInvoice = (member, plan, amount) => {
+    const doc = new jsPDF();
+    // Encabezado con logo y color
+    doc.setFillColor(25, 118, 210);
+    doc.rect(0, 0, 210, 38, 'F');
+    // Cargar imagen y convertir a base64
+    const addLogoAndContinue = (base64Logo) => {
+      doc.addImage(base64Logo, 'PNG', 12, 7, 28, 18);
+      doc.setTextColor(255,255,255);
+      doc.setFontSize(22);
+      doc.text(gym?.name?.toUpperCase() || 'GIMNASIO', 44, 20);
+      doc.setFontSize(13);
+      doc.text('FACTURA ELECTRÓNICA', 180, 20, { align: 'right' });
+      doc.setFontSize(10);
+      doc.text(`Fecha: ${new Date().toLocaleDateString()}`, 180, 30, { align: 'right' });
+
+      // Sombra bajo encabezado
+      doc.setFillColor(220, 220, 220);
+      doc.rect(0, 38, 210, 2, 'F');
+
+      // Sección datos del gimnasio y admin
+      doc.setTextColor(40,40,40);
+      doc.setFontSize(11);
+      doc.setDrawColor(200,200,200);
+      doc.line(12, 44, 198, 44);
+      doc.setFontSize(12);
+      doc.text('Datos del Gimnasio', 12, 50);
+      doc.setFontSize(10);
+      doc.text(`Dirección: ${gym?.address || '-'}`, 12, 56);
+      doc.text(`Teléfono: ${gym?.phone || '-'}`, 12, 61);
+      doc.text(`ID: ${gym?.id || '-'}`, 12, 66);
+      doc.setFontSize(12);
+      doc.text('Vendedor:', 120, 50);
+      doc.setFontSize(10);
+      doc.text(`${profile?.first_name || ''} ${profile?.last_name || ''}`, 120, 56);
+      doc.text(`ID: ${profile?.id || '-'}`, 120, 61);
+
+      // Sección datos del cliente
+      doc.setDrawColor(200,200,200);
+      doc.line(12, 72, 198, 72);
+      doc.setFontSize(12);
+      doc.text('Datos del Cliente', 12, 78);
+      doc.setFontSize(10);
+      doc.text(`Nombre: ${member.name || '-'}`, 12, 84);
+      doc.text(`Email: ${member.email || '-'}`, 12, 89);
+      doc.text(`ID Miembro: ${member.id || '-'}`, 12, 94);
+
+      // Tabla de detalle de la venta con fondo profesional
+      doc.setDrawColor(180,180,180);
+      doc.line(12, 102, 198, 102);
+      doc.setFontSize(12);
+      doc.text('Detalle de la Venta', 12, 108);
+      doc.setFontSize(10);
+      // Encabezado tabla con fondo gris claro
+      doc.setFillColor(245, 247, 250);
+      doc.roundedRect(12, 112, 186, 10, 2, 2, 'F');
+      doc.setTextColor(60, 60, 60);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Plan', 18, 119);
+      doc.text('Monto', 80, 119);
+      doc.text('Fecha', 140, 119);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(40,40,40);
+      // Fila de datos (asegura que se usan los datos correctos)
+      const planName = plan || member.plan || '-';
+      const planAmount = amount || member.planAmount || '-';
+      doc.text(planName, 18, 126);
+      doc.text(`$${planAmount ? Number(planAmount).toLocaleString() : '-'}`, 80, 126);
+      doc.text(`${new Date().toLocaleDateString()}`, 140, 126);
+
+      // Línea de total
+      doc.setDrawColor(25, 118, 210);
+      doc.line(12, 132, 198, 132);
+      doc.setFontSize(13);
+      doc.setTextColor(25, 118, 210);
+      doc.setFont('helvetica', 'bold');
+      doc.text('TOTAL:', 120, 139);
+      doc.setTextColor(40,40,40);
+      doc.text(`$${planAmount ? Number(planAmount).toLocaleString() : '-'}`, 150, 139);
+      doc.setFont('helvetica', 'normal');
+
+      // Pie de página profesional y moderno
+      doc.setFontSize(10);
+      doc.setTextColor(120,120,120);
+      doc.text('Gracias por su compra y confianza.', 12, 285);
+      doc.setFontSize(8);
+      doc.text('Documento generado automáticamente por GymMVP - Solo para uso interno', 12, 291);
+      doc.save(`Factura_${member.name.replace(/ /g,'_')}_${Date.now()}.pdf`);
+    };
+
+    // Si la imagen ya es base64, úsala directo. Si es ruta, conviértela:
+    if (logoImage.startsWith('data:image')) {
+      addLogoAndContinue(logoImage);
+    } else {
+      fetch(logoImage)
+        .then(res => res.blob())
+        .then(blob => {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            addLogoAndContinue(reader.result);
+          };
+          reader.readAsDataURL(blob);
+        });
+      return; // Evita que siga el resto del código antes de tener el logo
+    }
+
+    // Sombra bajo encabezado
+    doc.setFillColor(220, 220, 220);
+    doc.rect(0, 38, 210, 2, 'F');
+
+    // Sección datos del gimnasio y admin
+    doc.setTextColor(40,40,40);
+    doc.setFontSize(11);
+    doc.setDrawColor(200,200,200);
+    doc.line(12, 44, 198, 44);
+    doc.setFontSize(12);
+    doc.text('🏢 Datos del Gimnasio', 12, 50);
+    doc.setFontSize(10);
+    doc.text(`Dirección: ${gym?.address || '-'}`, 12, 56);
+    doc.text(`Teléfono: ${gym?.phone || '-'}`, 12, 61);
+    doc.text(`ID: ${gym?.id || '-'}`, 12, 66);
+    doc.setFontSize(12);
+    doc.text('👤 Vendedor:', 120, 50);
+    doc.setFontSize(10);
+    doc.text(`${profile?.first_name || ''} ${profile?.last_name || ''}`, 120, 56);
+    doc.text(`ID: ${profile?.id || '-'}`, 120, 61);
+
+    // Sección datos del cliente
+    doc.setDrawColor(200,200,200);
+    doc.line(12, 72, 198, 72);
+    doc.setFontSize(12);
+    doc.text('🧑‍💼 Datos del Cliente', 12, 78);
+    doc.setFontSize(10);
+    doc.text(`Nombre: ${member.name || '-'}`, 12, 84);
+    doc.text(`Email: ${member.email || '-'}`, 12, 89);
+    doc.text(`ID Miembro: ${member.id || '-'}`, 12, 94);
+
+    // Tabla de detalle de la venta con sombreado y emojis
+    doc.setDrawColor(180,180,180);
+    doc.line(12, 102, 198, 102);
+    doc.setFontSize(12);
+    doc.text('🧾 Detalle de la Venta', 12, 108);
+    doc.setFontSize(10);
+    // Encabezado tabla
+    doc.setFillColor(230, 240, 255);
+    doc.roundedRect(12, 112, 186, 10, 2, 2, 'F');
+    doc.setTextColor(25, 118, 210);
+    doc.text('Plan', 18, 119);
+    doc.text('Monto', 80, 119);
+    doc.text('Fecha', 140, 119);
+    doc.setTextColor(40,40,40);
+    // Fila de datos (asegura que se usan los datos correctos)
+    const planName = plan || member.plan || '-';
+    const planAmount = amount || member.planAmount || '-';
+    doc.text(planName, 18, 126);
+    doc.text(`$${planAmount ? Number(planAmount).toLocaleString() : '-'}`, 80, 126);
+    doc.text(`${new Date().toLocaleDateString()}`, 140, 126);
+
+    // Línea de total
+    doc.setDrawColor(25, 118, 210);
+    doc.line(12, 132, 198, 132);
+    doc.setFontSize(13);
+    doc.setTextColor(25, 118, 210);
+    doc.text('TOTAL:', 120, 139);
+    doc.setTextColor(40,40,40);
+    doc.text(`$${planAmount ? Number(planAmount).toLocaleString() : '-'}`, 150, 139);
+
+    // Pie de página profesional y moderno
+    doc.setFontSize(10);
+    doc.setTextColor(120,120,120);
+    doc.text('✨ ¡Gracias por tu compra y confianza! ✨', 12, 285);
+    doc.setFontSize(8);
+    doc.text('Documento generado automáticamente por GymMVP - Solo para uso interno', 12, 291);
+    doc.save(`Factura_${member.name.replace(/ /g,'_')}_${Date.now()}.pdf`);
+  };
 
   useEffect(() => {
     // Cargar planes reales del gimnasio
@@ -70,9 +424,10 @@ export default function ViewRevenue({ onBack }) {
       // Traer miembros activos del gimnasio
       const { data: members, error: membersError } = await supabase
         .from('profiles')
-        .select('id, first_name, last_name, email')
+        .select('id, first_name, last_name, email, gym_id')
         .eq('gym_id', profile.gym_id)
         .eq('role', 'member');
+      console.log('[WOMPI][fetchMembersWithPlans] members:', members, 'error:', membersError);
 
       // Traer membresías activas
       const { data: memberships, error: membershipsError } = await supabase
@@ -80,6 +435,7 @@ export default function ViewRevenue({ onBack }) {
         .select('id, user_id, plan_id, start_date, end_date, status, plans(name, price, duration_days)')
         .eq('gym_id', profile.gym_id)
         .eq('status', 'active');
+      console.log('[WOMPI][fetchMembersWithPlans] memberships:', memberships, 'error:', membershipsError);
 
       // Relacionar miembros con membresía y calcular días restantes
       const today = new Date();
@@ -100,6 +456,7 @@ export default function ViewRevenue({ onBack }) {
           id: m.id,
           name: `${m.first_name} ${m.last_name}`,
           email: m.email,
+          gym_id: m.gym_id,
           plan: planName,
           planStart,
           planEnd,
@@ -108,20 +465,15 @@ export default function ViewRevenue({ onBack }) {
           planAmount,
         };
       });
+      console.log('[WOMPI][fetchMembersWithPlans] memberRows:', memberRows);
       setMembersList(memberRows);
+      if (!memberRows.length) {
+        console.error('[WOMPI][fetchMembersWithPlans] No se encontraron miembros para el gimnasio', profile.gym_id);
+      } else if (!memberRows[0].gym_id) {
+        console.error('[WOMPI][fetchMembersWithPlans] El primer miembro no tiene gym_id:', memberRows[0]);
+      }
     }
     fetchMembersWithPlans();
-        // Cargar miembros para el formulario de registro de pagos
-        async function fetchMembers() {
-          if (!profile?.gym_id) return;
-          const { data: members, error } = await supabase
-            .from('profiles')
-            .select('id, first_name, last_name')
-            .eq('gym_id', profile.gym_id)
-            .eq('role', 'member');
-          if (members) setMembersList(members);
-        }
-        fetchMembers();
     async function fetchRevenue() {
       if (!profile?.gym_id) return;
       setLoading(true);
@@ -764,116 +1116,127 @@ export default function ViewRevenue({ onBack }) {
   const handleRegisterPayment = async (e) => {
     e.preventDefault();
     setRegisterLoading(true);
-        try {
-          if (!registerForm.member_id || !registerForm.amount || !registerForm.plan_id) {
-            toast.error('Complete todos los campos obligatorios');
-            setRegisterLoading(false);
-            return;
-          }
-          // Solo registrar el pago si no es membresía, o si es membresía y el usuario no tiene una activa
-          const plan = plansList.find(p => p.id === registerForm.plan_id);
-          let canRegister = true;
-          if (plan && plan.duration_days && plan.duration_days >= 28) {
-            // Verificar membresía activa
-            const now = new Date();
-            const { data: activeMemberships, error: activeError } = await supabase
-              .from('memberships')
-              .select('id, end_date')
-              .eq('user_id', registerForm.member_id)
-              .eq('gym_id', profile.gym_id)
-              .eq('status', 'active');
-            const hasActive = (activeMemberships || []).some(m => new Date(m.end_date) >= now);
-            if (hasActive) {
-              toast.error('El usuario ya tiene una membresía activa. No se puede registrar la venta de una nueva membresía hasta que termine la actual.');
-              canRegister = false;
-            }
-          }
-          if (!canRegister) {
-            setRegisterLoading(false);
-            return;
-          }
-          // Registrar el pago
-          const { data, error } = await supabase
-            .from('payments')
-            .insert([{
-              member_id: registerForm.member_id,
-              amount: Number(registerForm.amount),
-              payment_type: 'mensualidad',
+    try {
+      if (!registerForm.member_id || !registerForm.amount || !registerForm.plan_id) {
+        toast.error('Complete todos los campos obligatorios');
+        setRegisterLoading(false);
+        return;
+      }
+      // Solo registrar el pago si no es membresía, o si es membresía y el usuario no tiene una activa
+      const plan = plansList.find(p => p.id === registerForm.plan_id);
+      let canRegister = true;
+      if (plan && plan.duration_days && plan.duration_days >= 28) {
+        // Verificar membresía activa
+        const now = new Date();
+        const { data: activeMemberships, error: activeError } = await supabase
+          .from('memberships')
+          .select('id, end_date')
+          .eq('user_id', registerForm.member_id)
+          .eq('gym_id', profile.gym_id)
+          .eq('status', 'active');
+        const hasActive = (activeMemberships || []).some(m => new Date(m.end_date) >= now);
+        if (hasActive) {
+          toast.error('El usuario ya tiene una membresía activa. No se puede registrar la venta de una nueva membresía hasta que termine la actual.');
+          canRegister = false;
+        }
+      }
+      if (!canRegister) {
+        setRegisterLoading(false);
+        return;
+      }
+      // Registrar el pago
+      const { data, error } = await supabase
+        .from('payments')
+        .insert([{
+          member_id: registerForm.member_id,
+          amount: Number(registerForm.amount),
+          payment_type: 'mensualidad',
+          plan_id: registerForm.plan_id,
+          notes: registerForm.notes || '',
+          gym_id: profile.gym_id,
+          status: 'Completado',
+          paid_at: new Date().toISOString(),
+        }]);
+      if (error) {
+        toast.error('Error al registrar el pago');
+      } else {
+        // Si es membresía, crearla
+        if (plan && plan.duration_days && plan.duration_days >= 28) {
+          let startDate = new Date();
+          let endDate = new Date();
+          endDate.setDate(startDate.getDate() + Number(plan.duration_days));
+          await supabase.from('memberships').insert([
+            {
+              user_id: registerForm.member_id,
               plan_id: registerForm.plan_id,
-              notes: registerForm.notes || '',
               gym_id: profile.gym_id,
-              status: 'Completado',
-              paid_at: new Date().toISOString(),
-            }]);
-          if (error) {
-            toast.error('Error al registrar el pago');
-          } else {
-            // Si es membresía, crearla
-            if (plan && plan.duration_days && plan.duration_days >= 28) {
-              let startDate = new Date();
-              let endDate = new Date();
-              endDate.setDate(startDate.getDate() + Number(plan.duration_days));
-              await supabase.from('memberships').insert([
-                {
-                  user_id: registerForm.member_id,
-                  plan_id: registerForm.plan_id,
-                  gym_id: profile.gym_id,
-                  start_date: startDate.toISOString(),
-                  end_date: endDate.toISOString(),
-                  status: 'active',
-                }
-              ]);
+              start_date: startDate.toISOString(),
+              end_date: endDate.toISOString(),
+              status: 'active',
             }
+          ]);
+        }
 
-            // Fetch membresía actualizada del miembro
-            const { data: memberships, error: membershipsError } = await supabase
-              .from('memberships')
-              .select('id, user_id, plan_id, start_date, end_date, status, plans(name, price, duration_days)')
-              .eq('gym_id', profile.gym_id)
-              .eq('user_id', registerForm.member_id)
-              .eq('status', 'active')
-              .order('end_date', { ascending: false })
-              .limit(1);
+        // Fetch membresía actualizada del miembro
+        const { data: memberships, error: membershipsError } = await supabase
+          .from('memberships')
+          .select('id, user_id, plan_id, start_date, end_date, status, plans(name, price, duration_days)')
+          .eq('gym_id', profile.gym_id)
+          .eq('user_id', registerForm.member_id)
+          .eq('status', 'active')
+          .order('end_date', { ascending: false })
+          .limit(1);
 
-            let memberUpdate = {
-              plan: '',
-              planStart: '',
-              planEnd: '',
-              daysLeft: null,
-              planId: '',
-              planAmount: '',
-            };
-            if (memberships && memberships.length > 0) {
-              const membership = memberships[0];
-              const today = new Date();
-              let daysLeft = null;
-              if (membership.end_date) {
-                daysLeft = Math.max(0, Math.ceil((new Date(membership.end_date) - today) / (1000*60*60*24)));
-              }
-              memberUpdate = {
-                plan: membership.plans?.name || '',
-                planStart: membership.start_date,
-                planEnd: membership.end_date,
-                daysLeft,
-                planId: membership.plan_id,
-                planAmount: membership.plans?.price || '',
-              };
-            }
-
-            setMembersList(prev =>
-              prev.map(m =>
-                m.id === registerForm.member_id
-                  ? {
-                      ...m,
-                      ...memberUpdate
-                    }
-                  : m
-              )
-            );
-            toast.success('Pago registrado correctamente');
-            setShowRegisterPayment(false);
-            setRegisterForm({ member_id: '', payment_type: 'mensualidad', amount: '', plan_id: '', notes: '' });
+        let memberUpdate = {
+          plan: '',
+          planStart: '',
+          planEnd: '',
+          daysLeft: null,
+          planId: '',
+          planAmount: '',
+        };
+        if (memberships && memberships.length > 0) {
+          const membership = memberships[0];
+          const today = new Date();
+          let daysLeft = null;
+          if (membership.end_date) {
+            daysLeft = Math.max(0, Math.ceil((new Date(membership.end_date) - today) / (1000*60*60*24)));
           }
+          memberUpdate = {
+            plan: membership.plans?.name || '',
+            planStart: membership.start_date,
+            planEnd: membership.end_date,
+            daysLeft,
+            planId: membership.plan_id,
+            planAmount: membership.plans?.price || '',
+          };
+        }
+
+        setMembersList(prev =>
+          prev.map(m =>
+            m.id === registerForm.member_id
+              ? {
+                  ...m,
+                  ...memberUpdate
+                }
+              : m
+          )
+        );
+        // Generar factura automáticamente al registrar el pago
+        const member = membersList.find(m => m.id === registerForm.member_id);
+        handleDownloadInvoice(
+          {
+            ...member,
+            plan: memberUpdate.plan,
+            planAmount: memberUpdate.planAmount
+          },
+          memberUpdate.plan,
+          memberUpdate.planAmount
+        );
+        toast.success('Pago registrado correctamente');
+        setShowRegisterPayment(false);
+        setRegisterForm({ member_id: '', payment_type: 'mensualidad', amount: '', plan_id: '', notes: '' });
+      }
     } catch (err) {
       toast.error('Error inesperado al registrar el pago');
     }
@@ -969,7 +1332,7 @@ export default function ViewRevenue({ onBack }) {
                 </tr>
               </thead>
               <tbody>
-                {membersList.map(m => (
+                {membersList.slice((membersPage-1)*membersPerPage, membersPage*membersPerPage).map(m => (
                   <tr key={m.id} style={{borderBottom:'1px solid #e2e8f0'}}>
                     <td style={{padding:'8px'}}>{m.name}</td>
                     <td style={{padding:'8px'}}>{m.email}</td>
@@ -988,7 +1351,7 @@ export default function ViewRevenue({ onBack }) {
                       ) : '-'}
                     </td>
                     <td style={{padding:'8px',textAlign:'center'}}>
-                      <button className="btn-primary" style={{fontSize:'0.95em',padding:'4px 10px'}} onClick={() => {
+                      <button className="btn-primary" style={{fontSize:'0.95em',padding:'4px 10px',marginRight:'8px'}} onClick={() => {
                         setShowRegisterPayment(true);
                         setRegisterForm(f => ({
                           ...f,
@@ -1000,12 +1363,90 @@ export default function ViewRevenue({ onBack }) {
                       }}>
                         Registrar Pago
                       </button>
+                      <button 
+                        className="btn-invoice-red"
+                        style={{
+                          fontSize: '0.95em',
+                          padding: '4px 10px',
+                          background: 'linear-gradient(90deg, #ff5858 0%, #f857a6 100%)',
+                          color: '#fff',
+                          border: 'none',
+                          borderRadius: '6px',
+                          boxShadow: '0 2px 8px rgba(255,88,88,0.08)',
+                          cursor: 'pointer',
+                          fontWeight: 600
+                        }} 
+                        onClick={() => handleDownloadInvoice(m, m.plan, m.planAmount)}
+                      >
+                        Descargar Factura
+                      </button>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+        </div>
+
+        {/* Pagos Factus */}
+        <div className="dashboard-section" style={{margin:'2.5em 0',background:'#fff',borderRadius:14,boxShadow:'0 2px 16px #0001',padding:'2em'}}>
+          <h2 style={{marginBottom:24,display:'flex',alignItems:'center',gap:10}}>
+            <span style={{fontSize:28,color:'#1976d2'}}>🧾</span> Pagos Factus
+          </h2>
+          {loadingFactusPayments ? (
+            <div style={{textAlign:'center',padding:'2em'}}>
+              <span className="loader" /> Cargando pagos...
+            </div>
+          ) : factusPayments.length === 0 ? (
+            <div style={{textAlign:'center',color:'#888',padding:'2em'}}>No hay pagos registrados con Factus.</div>
+          ) : (
+            <div style={{overflowX:'auto'}}>
+              <table style={{width:'100%',borderCollapse:'collapse',fontSize:'1em',background:'#fafbfc',borderRadius:10,overflow:'hidden',boxShadow:'0 1px 8px #0001'}}>
+                <thead style={{background:'#f4f6fa'}}>
+                  <tr style={{color:'#1976d2',fontWeight:700}}>
+                    <th style={{padding:'12px 8px'}}>Miembro</th>
+                    <th style={{padding:'12px 8px'}}>Plan</th>
+                    <th style={{padding:'12px 8px'}}>Monto</th>
+                    <th style={{padding:'12px 8px'}}>Fecha</th>
+                    <th style={{padding:'12px 8px'}}>Factura</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {factusPayments.map((p, idx) => {
+                    // Estructura plana según los logs
+                    const member = p.names || p.graphic_representation_name || '-';
+                    const email = p.email || '-';
+                    const plan = p.document?.name || '-';
+                    const amount = p.total ? Number(p.total).toLocaleString() : '-';
+                    const date = p.created_at || '-';
+                    const invoiceId = p.number || p.reference_code || p.id || idx;
+                    return (
+                      <tr key={invoiceId} style={{borderBottom:'1px solid #e3e8ee'}}>
+                        <td style={{padding:'10px 8px'}}>{member}</td>
+                        <td style={{padding:'10px 8px'}}>{plan}</td>
+                        <td style={{padding:'10px 8px'}}>${amount}</td>
+                        <td style={{padding:'10px 8px'}}>{date}</td>
+                        <td style={{padding:'10px 8px',display:'flex',gap:8}}>
+                          <button className="btn-primary" style={{padding:'4px 12px',fontSize:'0.98em'}} onClick={()=>handleViewFactusPDF(invoiceId)}>
+                            Ver PDF
+                          </button>
+                          <button className="btn-success" style={{padding:'4px 12px',fontSize:'0.98em'}} onClick={()=>handleDownloadFactusPDF(invoiceId, member)}>
+                            Descargar PDF
+                          </button>
+                          <button className="btn-info" style={{padding:'4px 12px',fontSize:'0.98em',background:'#1976d2',color:'#fff'}} onClick={()=>handleDownloadFactusXML(invoiceId, member)}>
+                            Descargar XML
+                          </button>
+                          <button className="btn-danger" style={{padding:'4px 12px',fontSize:'0.98em',background:'#e53935',color:'#fff'}} onClick={()=>handleDeletePayment(idx)}>
+                            Eliminar
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
         {/* Fuentes de Ingreso */}
@@ -1093,6 +1534,16 @@ export default function ViewRevenue({ onBack }) {
         <div className="dashboard-section actions-section">
           <h2>Acciones Rápidas</h2>
           <div className="revenue-actions">
+            {/* Botón Reto Factus */}
+            {profile?.role === 'gym_admin' && plansList.length > 0 && (
+              <button
+                className="btn-primary"
+                style={{background:'#1976d2',border:'none',display:'flex',alignItems:'center',justifyContent:'center'}}
+                onClick={handleOpenFactusModal}
+              >
+                🧾 Reto Factus
+              </button>
+            )}
             <button onClick={() => setShowRegisterPayment(true)} className="btn-primary">
               💵 Registrar Pago
             </button>
@@ -1108,6 +1559,81 @@ export default function ViewRevenue({ onBack }) {
             <button onClick={() => toast.success('Datos exportados exitosamente')} className="btn-success">
               🧾 Exportar Datos
             </button>
+            {profile?.role === 'gym_admin' && plansList.length > 0 && (
+              <button
+                className="btn-primary"
+                style={{background:'#38d39f',border:'none',display:'flex',alignItems:'center',justifyContent:'center'}}
+                onClick={e => {
+                  e.preventDefault();
+                  setShowWompiModal(true);
+                }}
+              >
+                💳 Probar Pago Wompi
+              </button>
+            )}
+
+      {/* Modal Wompi Plan Select */}
+      {/* Modal Factus Invoice */}
+      <Modal open={showFactusModal} onClose={()=>setShowFactusModal(false)} title="Crear Factura Electrónica (Factus)">
+        <form onSubmit={handleFactusSubmit} style={{display:'flex',flexDirection:'column',gap:'1.2em',minWidth:280}}>
+          <div style={{display:'flex',flexDirection:'column',gap:'0.5em'}}>
+            <label htmlFor="factus-member" style={{fontWeight:500}}>Miembro</label>
+            <select id="factus-member" required value={factusForm.member_id} onChange={e => {
+              const memberId = e.target.value;
+              setFactusForm(f => ({ ...f, member_id: memberId }));
+            }} style={{padding:'10px',borderRadius:'8px',border:'1px solid #d1d5db',fontSize:'1em'}}>
+              <option value="">Seleccione un miembro...</option>
+              {membersList.map(m => (
+                <option key={m.id} value={m.id}>{m.name} {m.plan ? `- ${m.plan}` : ''}</option>
+              ))}
+            </select>
+          </div>
+          <div style={{display:'flex',flexDirection:'column',gap:'0.5em'}}>
+            <label htmlFor="factus-plan" style={{fontWeight:500}}>Plan</label>
+            <select id="factus-plan" required value={factusForm.plan_id} onChange={e => {
+              const planId = e.target.value;
+              const plan = plansList.find(p => p.id === planId);
+              setFactusForm(f => ({ ...f, plan_id: planId, amount: plan ? plan.price : '' }));
+            }} style={{padding:'10px',borderRadius:'8px',border:'1px solid #d1d5db',fontSize:'1em'}}>
+              <option value="">Seleccione un plan...</option>
+              {plansList.map(plan => (
+                <option key={plan.id} value={plan.id}>{plan.name} - ${Number(plan.price).toLocaleString()}</option>
+              ))}
+            </select>
+          </div>
+          {factusForm.plan_id && (
+            <div style={{background:'#f8f9fa',padding:'1em',borderRadius:'8px',border:'1px solid #e2e8f0',fontSize:'0.98em'}}>
+              <b>Precio:</b> ${factusForm.amount ? Number(factusForm.amount).toLocaleString() : '-'}
+            </div>
+          )}
+          <div style={{display:'flex',flexDirection:'column',gap:'0.5em'}}>
+            <label htmlFor="factus-notes" style={{fontWeight:500}}>Notas (opcional)</label>
+            <textarea id="factus-notes" value={factusForm.notes} onChange={e => setFactusForm(f => ({ ...f, notes: e.target.value }))} style={{padding:'10px',borderRadius:'8px',border:'1px solid #d1d5db',fontSize:'1em',minHeight:60}} placeholder="Notas adicionales para la factura..." />
+          </div>
+          {factusError && <div style={{color:'#e53935',fontWeight:600}}>{factusError}</div>}
+          <button type="submit" className="btn-primary" style={{background:'#1976d2',fontWeight:700,fontSize:'1.1em',marginTop:8}} disabled={factusLoading}>
+            {factusLoading ? 'Creando factura...' : 'Crear Factura'}
+          </button>
+        </form>
+      </Modal>
+      {showWompiModal && profile?.role === 'gym_admin' && plansList.length > 0 && (
+        <div className="modal-overlay">
+          <div className="modal-content-large" style={{maxWidth:400,padding:'2em',borderRadius:16,boxShadow:'0 8px 32px rgba(0,0,0,0.12)'}}>
+            <h3>Probar Pago Wompi</h3>
+            {/* El menú de planes ya está incluido dentro de WompiWidgetWithSignature */}
+            {WOMPI_PUBLIC_KEY && WOMPI_PUBLIC_KEY.startsWith('pub_') ? (
+              <WompiWidgetWithSignature 
+                plansList={plansList} 
+                membersList={membersList} 
+                publicKey={WOMPI_PUBLIC_KEY} 
+                onCancel={()=>setShowWompiModal(false)} 
+              />
+            ) : (
+              <div style={{color:'red',margin:'1em 0',fontWeight:'bold'}}>No se ha configurado una llave pública válida de Wompi Sandbox.</div>
+            )}
+          </div>
+        </div>
+      )}
           </div>
         </div>
       </div>

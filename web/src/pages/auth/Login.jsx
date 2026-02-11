@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import toast from "react-hot-toast";
 import { supabase } from "../../supabaseClient";
+import { secureLogin } from '../../api/auth.api';
 import "../../styles/auth.css";
 
 export default function Login() {
@@ -37,78 +38,85 @@ export default function Login() {
     setLoading(true);
 
     try {
-      // 1. Autenticar con Supabase
-      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password: password
-      });
-
-      if (authError) {
-        console.error("❌ Error de autenticación:", authError.message);
-        
-        // Mensajes de error más específicos
-        if (authError.message.includes('Invalid login credentials')) {
+      // Login seguro: bloquea acceso si el gimnasio está inactivo
+      try {
+        const authData = await secureLogin(email, password);
+        // 2. Obtener perfil del usuario
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', authData.user.id)
+          .single();
+        if (profileError) {
+          toast.error("Error cargando perfil de usuario");
+          await supabase.auth.signOut();
+          setLoading(false);
+          return;
+        }
+        if (!profile) {
+          toast.error("Perfil de usuario no encontrado");
+          await supabase.auth.signOut();
+          setLoading(false);
+          return;
+        }
+        // Bloqueo por suspensión de perfil
+        if (profile.status && profile.status.toLowerCase() === 'suspendido') {
+          toast.error("Tu acceso ha sido suspendido temporalmente. Por favor, contacta a la administración del gimnasio para más información.");
+          await supabase.auth.signOut();
+          setLoading(false);
+          return;
+        }
+        // Advertencia si el plan está vencido (solo para miembros)
+        if (profile.role === 'member') {
+          const { data: memberships } = await supabase
+            .from('memberships')
+            .select('*')
+            .eq('user_id', profile.id)
+            .eq('gym_id', profile.gym_id)
+            .order('end_date', { ascending: false })
+            .limit(1);
+          if (memberships && memberships.length > 0) {
+            const membership = memberships[0];
+            const now = new Date();
+            const end = membership.end_date ? new Date(membership.end_date) : null;
+            if (end && now > end) {
+              toast.error('Tu plan ha vencido. Renueva tu membresía para seguir disfrutando de los servicios del gimnasio.');
+            }
+          }
+        }
+        toast.success(`¡Bienvenido ${profile.first_name}!`);
+        switch (profile.role) {
+          case "super_admin":
+            navigate("/superadmin", { replace: true });
+            break;
+          case "gym_admin":
+          case "admin":
+            navigate("/admin", { replace: true });
+            break;
+          case "coach":
+            navigate("/coach", { replace: true });
+            break;
+          case "member":
+            navigate("/member", { replace: true });
+            break;
+          default:
+            toast.error("Rol de usuario no reconocido");
+            await supabase.auth.signOut();
+        }
+      } catch (err) {
+        if (err.message && err.message.includes('gimnasio está inactivo')) {
+          toast.error('Acceso restringido: tu gimnasio está inactivo o bloqueado. Contacta al administrador.');
+        } else if (err.message && err.message.includes('Invalid login credentials')) {
           toast.error("Email o contraseña incorrectos");
-        } else if (authError.message.includes('Email not confirmed')) {
+        } else if (err.message && err.message.includes('Email not confirmed')) {
           toast.error("Por favor confirma tu email");
         } else {
-          toast.error(`Error de login: ${authError.message}`);
+          toast.error(`Error de login: ${err.message || err}`);
         }
+        setLoading(false);
         return;
       }
-
-      console.log("✅ Autenticación exitosa:", authData.user.email);
-
-      // 2. Obtener perfil del usuario
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select(`
-          *,
-          gyms (
-            id,
-            name,
-            slug
-          )
-        `)
-        .eq('id', authData.user.id)
-        .single();
-
-      if (profileError) {
-        console.error("❌ Error obteniendo perfil:", profileError.message);
-        toast.error("Error cargando perfil de usuario");
-        await supabase.auth.signOut();
-        return;
-      }
-
-      if (!profile) {
-        console.error("❌ No se encontró perfil para el usuario");
-        toast.error("Perfil de usuario no encontrado");
-        await supabase.auth.signOut();
-        return;
-      }
-
-      console.log("✅ Perfil obtenido:", profile);
-
-      // 3. Mostrar éxito y redirigir según rol
-      toast.success(`¡Bienvenido ${profile.first_name}!`);
-
-      switch (profile.role) {
-        case "gym_admin":
-          navigate("/admin", { replace: true });
-          break;
-        case "coach":
-          navigate("/coach", { replace: true });
-          break;
-        case "member":
-          navigate("/member", { replace: true });
-          break;
-        default:
-          toast.error("Rol de usuario no reconocido");
-          await supabase.auth.signOut();
-      }
-
     } catch (error) {
-      console.error("❌ Error general:", error);
       toast.error("Error inesperado durante el login");
     } finally {
       setLoading(false);

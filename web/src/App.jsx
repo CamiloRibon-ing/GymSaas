@@ -1,9 +1,11 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import WompiResult from "./pages/WompiResult";
 import Login from "./pages/auth/Login";
 import RegisterGym from "./pages/auth/RegisterGym";
 import AdminDashboard from "./pages/dashboard/AdminDashboard";
 import CoachDashboard from "./pages/dashboard/CoachDashboard";
 import MemberDashboard from "./pages/dashboard/MemberDashboard";
+import SuperAdminDashboard from "./pages/dashboard/SuperAdminDashboard";
 import ProtectedRoute from "./components/layout/ProtectedRoute";
 import { useProfile } from "./hooks/useProfile";
 import { GymDataProvider } from "./context/GymDataContextDB";
@@ -20,7 +22,18 @@ function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<RegisterGym />} />
 
+          {/* Resultado de pago Wompi (pública para pruebas) */}
+          <Route path="/wompi-result" element={<WompiResult />} />
+
           {/* Rutas protegidas */}
+          <Route
+            path="/superadmin"
+            element={
+              <ProtectedRoute>
+                <SuperAdminDashboard />
+              </ProtectedRoute>
+            }
+          />
           <Route
             path="/admin"
             element={
@@ -79,7 +92,10 @@ function RootRedirect() {
 
   // Redirección según rol del usuario
   switch (profile.role) {
+    case "superadmin":
+      return <Navigate to="/superadmin" replace />;
     case "gym_admin":
+    case "admin":
       return <Navigate to="/admin" replace />;
     case "coach":
       return <Navigate to="/coach" replace />;

@@ -13,7 +13,10 @@ export default defineConfig({
       'localhost',
       '127.0.0.1',
       'https://122192d6f2a6.ngrok-free.app'
-    ]
+    ],
+    proxy: {
+      '/api': 'http://localhost:3001'
+    }
   },
   resolve: {
     preserveSymlinks: true

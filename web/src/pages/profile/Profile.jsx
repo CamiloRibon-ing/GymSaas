@@ -1,14 +1,18 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useProfile } from '../../hooks/useProfile';
 import QRGenerator from '../attendance/QRGenerator';
-import { useEffect, useState } from 'react';
 import { getGymById } from '../../api/gyms.api';
+import { getUserById } from '../../api/users.api';
+import { supabase } from '../../supabaseClient';
 import toast from 'react-hot-toast';
 import '../../styles/dashboard.css';
 
 export default function Profile({ onBack }) {
   const { profile, loading } = useProfile();
   const [gymName, setGymName] = useState('');
+  const [daysRemaining, setDaysRemaining] = useState('Cargando...');
+  const [daysColor, setDaysColor] = useState('#667eea');
+  const [coachName, setCoachName] = useState('Cargando...');
 
   // Consultar el nombre del gimnasio cuando el perfil tenga gym_id
   useEffect(() => {
@@ -26,6 +30,51 @@ export default function Profile({ onBack }) {
     }
     fetchGymName();
   }, [profile?.gym_id]);
+
+  // Consultar días restantes de la membresía activa y coach asignado
+  useEffect(() => {
+    async function fetchMembershipAndCoach() {
+      if (!profile?.id || !profile?.gym_id) return;
+      // Buscar membresía activa
+      const { data: memberships, error } = await supabase
+        .from('memberships')
+        .select('start_date, end_date, plan_id, status')
+        .eq('user_id', profile.id)
+        .eq('gym_id', profile.gym_id)
+        .eq('status', 'active');
+      if (error || !memberships || memberships.length === 0) {
+        setDaysRemaining('No activa');
+        setDaysColor('#e53e3e');
+      } else {
+        const membership = memberships[0];
+        const now = new Date();
+        const endDate = new Date(membership.end_date);
+        const daysLeft = Math.ceil((endDate - now) / (24 * 60 * 60 * 1000));
+        setDaysRemaining(daysLeft > 0 ? `${daysLeft} días` : 'Vencido');
+        if (daysLeft > 20) {
+          setDaysColor('#38a169'); // verde
+        } else if (daysLeft > 10) {
+          setDaysColor('#f6ad55'); // amarillo
+        } else if (daysLeft > 0) {
+          setDaysColor('#e53e3e'); // rojo
+        } else {
+          setDaysColor('#e53e3e'); // vencido
+        }
+      }
+      // Buscar coach asignado
+      if (profile.assigned_coach_id) {
+        try {
+          const coach = await getUserById(profile.assigned_coach_id);
+          setCoachName(coach ? `${coach.first_name || ''} ${coach.last_name || ''}`.trim() : 'No asignado');
+        } catch {
+          setCoachName('No asignado');
+        }
+      } else {
+        setCoachName('No asignado');
+      }
+    }
+    fetchMembershipAndCoach();
+  }, [profile?.id, profile?.gym_id, profile?.assigned_coach_id]);
   // Log para depuración: mostrar el objeto profile completo
   if (profile) {
     console.log('[Profile.jsx] Perfil cargado:', JSON.stringify(profile, null, 2));
@@ -70,48 +119,48 @@ export default function Profile({ onBack }) {
       </header>
 
       <div className="dashboard-content">
-          <div className="dashboard-section">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-              <h2>Información Personal</h2>
-              <div style={{ display: 'flex', gap: '1rem' }}>
-                {/* Acciones rápidas: Mi QR Personal */}
-                <div style={{display:'flex',flexDirection:'column',alignItems:'center'}}>
-                  <button 
-                    onClick={() => setShowMyQR(true)} 
-                    className="btn-secondary"
-                    style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom:'0.5em' }}
-                    disabled={loading || !profile?.gym_id}
-                  >
-                    📱 Mi QR Personal
-                  </button>
-                  <div style={{fontSize:'0.98em',color:profile?.gym_id?'#2b6cb0':'#e53e3e',fontWeight:'bold'}}>
-                    {profile?.gym_id ? (
-                      <>
-                        🏋️ Gimnasio: {gymName ? gymName : 'Sin nombre'}<br/>
-                        ID: {profile.gym_id}
-                      </>
-                    ) : (
-                      <>⚠️ No tienes un gimnasio asignado</>
-                    )}
-                  </div>
+        <div className="dashboard-section">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+            <h2>Información Personal</h2>
+            <div style={{ display: 'flex', gap: '1rem' }}>
+              {/* Acciones rápidas: Mi QR Personal */}
+              <div style={{display:'flex',flexDirection:'column',alignItems:'center'}}>
+                <button 
+                  onClick={() => setShowMyQR(true)} 
+                  className="btn-secondary"
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom:'0.5em' }}
+                  disabled={loading || !profile?.gym_id}
+                >
+                  📱 Mi QR Personal
+                </button>
+                <div style={{fontSize:'0.98em',color:profile?.gym_id?'#2b6cb0':'#e53e3e',fontWeight:'bold'}}>
+                  {profile?.gym_id ? (
+                    <>
+                      🏋️ Gimnasio: {gymName ? gymName : 'Sin nombre'}<br/>
+                      ID: {profile.gym_id}
+                    </>
+                  ) : (
+                    <>⚠️ No tienes un gimnasio asignado</>
+                  )}
                 </div>
-                {/* Editar perfil */}
-                {!isEditing ? (
-                  <button onClick={() => setIsEditing(true)} className="btn-primary">
-                    ✏️ Editar Perfil
-                  </button>
-                ) : (
-                  <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <button onClick={handleSave} className="btn-primary">
-                      ✅ Guardar
-                    </button>
-                    <button onClick={() => setIsEditing(false)} className="btn-secondary">
-                      ❌ Cancelar
-                    </button>
-                  </div>
-                )}
               </div>
+              {/* Editar perfil */}
+              {!isEditing ? (
+                <button onClick={() => setIsEditing(true)} className="btn-primary">
+                  ✏️ Editar Perfil
+                </button>
+              ) : (
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button onClick={handleSave} className="btn-primary">
+                    ✅ Guardar
+                  </button>
+                  <button onClick={() => setIsEditing(false)} className="btn-secondary">
+                    ❌ Cancelar
+                  </button>
+                </div>
+              )}
             </div>
+          </div>
 
           <div className="profile-card">
             <div className="profile-avatar">
@@ -206,6 +255,39 @@ export default function Profile({ onBack }) {
                   <div className="form-display">
                     {profile?.created_at ? new Date(profile.created_at).toLocaleDateString('es-ES') : 'No disponible'}
                   </div>
+                </div>
+              </div>
+              {/* MÉTRICAS GENERALES DEL MIEMBRO */}
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Días restantes de plan</label>
+                  <div className="form-display" style={{fontWeight:'bold',color:daysColor}}>{daysRemaining}</div>
+                  {/* Mensaje de advertencia si quedan pocos días */}
+                  {(() => {
+                    let dias = 0;
+                    if (typeof daysRemaining === 'string' && daysRemaining.includes('días')) {
+                      dias = parseInt(daysRemaining);
+                    }
+                    if (dias > 0 && dias <= 10) {
+                      return (
+                        <div style={{color:'#e53e3e',fontWeight:'bold',marginTop:'0.5em',fontSize:'0.98em'}}>
+                          ⚠️ Quedan pocos días. Renueva tu plan para no perder el acceso ni estar en mora con el gimnasio.
+                        </div>
+                      );
+                    }
+                    if (daysRemaining === 'Vencido' || daysRemaining === 'No activa') {
+                      return (
+                        <div style={{color:'#e53e3e',fontWeight:'bold',marginTop:'0.5em',fontSize:'0.98em'}}>
+                          ❌ Tu plan está vencido. Renueva para recuperar el acceso.
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
+                </div>
+                <div className="form-group">
+                  <label>Mi Coach</label>
+                  <div className="form-display" style={{fontWeight:'bold',color:'#764ba2'}}>{coachName}</div>
                 </div>
               </div>
             </div>

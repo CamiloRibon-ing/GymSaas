@@ -266,13 +266,50 @@ export default function QRScanner({ onScan, gymId }) {
         {recentScans.length > 0 && (
           <div className="recent-scans" style={{ marginTop: 20 }}>
             <h4>Últimos escaneos</h4>
-            <ul style={{ fontSize: '0.95em', background: '#f7fafc', borderRadius: 8, padding: 10 }}>
-              {recentScans.map((scan, idx) => (
-                <li key={idx} style={{ marginBottom: 4 }}>
-                  <span style={{ color: '#38a169', fontWeight: 600 }}>{scan.time}</span>: <span style={{ wordBreak: 'break-all' }}>{scan.data}</span>
-                </li>
-              ))}
-            </ul>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1.2rem' }}>
+              {recentScans.map((scan, idx) => {
+                let info = null;
+                try {
+                  info = typeof scan.data === 'string' ? JSON.parse(scan.data) : scan.data;
+                } catch {
+                  info = null;
+                }
+                return (
+                  <div key={idx} className="scan-card" style={{
+                    background: 'linear-gradient(135deg, #f8f9ff 0%, #e6f3ff 100%)',
+                    borderRadius: '12px',
+                    boxShadow: '0 2px 12px rgba(102,126,234,0.08)',
+                    padding: '1.2rem 1.5rem',
+                    minWidth: 260,
+                    maxWidth: 340,
+                    flex: '1 1 260px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.5rem',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.7rem' }}>
+                      <span style={{ fontSize: '1.5em', color: '#667eea' }}>📄</span>
+                      <span style={{ color: '#38a169', fontWeight: 600 }}>{scan.time}</span>
+                    </div>
+                    {info ? (
+                      <>
+                        <div style={{ fontWeight: 600, fontSize: '1.1em', color: '#2d3a4a' }}>{info.n || 'Miembro'}</div>
+                        <div style={{ color: '#667eea', fontSize: '0.98em' }}>Membresía: <strong>{info.p || '-'}</strong></div>
+                        <div style={{ color: '#4a5568', fontSize: '0.97em' }}>Email: <span style={{ color: '#764ba2' }}>{info.e || '-'}</span></div>
+                        <div style={{ color: '#4a5568', fontSize: '0.97em' }}>ID: <span style={{ color: '#667eea' }}>{info.memberDbId || info.id || '-'}</span></div>
+                        <div style={{ color: '#4a5568', fontSize: '0.97em' }}>Gimnasio: <span style={{ color: '#667eea' }}>{info.gymId || '-'}</span></div>
+                        <div style={{ color: '#2d3a4a', fontWeight: 500, fontSize: '1em' }}>
+                          Estado: <span style={{ color: info.t === 'gym' ? '#38a169' : '#e53e3e', fontWeight: 600 }}>{info.t === 'gym' ? 'Entrada/Salida registrada' : 'Desconocido'}</span>
+                        </div>
+                        <div style={{ color: '#6b7280', fontSize: '0.95em' }}>Hora escaneo: <strong>{scan.time}</strong></div>
+                      </>
+                    ) : (
+                      <div style={{ color: '#e53e3e', fontWeight: 600 }}>Formato no reconocido</div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
       </div>

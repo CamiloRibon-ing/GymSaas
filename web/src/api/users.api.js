@@ -1,3 +1,5 @@
+const BACKEND_URL = 'http://localhost:4001';
+
 // Actualizar miembro pendiente
 export async function updatePendingMember(pendingId, updates) {
   const { data, error } = await supabase
@@ -99,4 +101,38 @@ export async function deleteUser(userId) {
     .eq('id', userId);
   if (error) throw error;
   return { success: true };
+}
+
+// Crear usuario admin en Supabase (backend)
+export async function createAdmin({ email, password, user_metadata }) {
+  const res = await fetch(`${BACKEND_URL}/api/create-admin`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password, user_metadata })
+  });
+  if (!res.ok) throw new Error('Error creando usuario admin');
+  return await res.json();
+}
+
+// Enviar correo de aprobación/rechazo profesional
+export async function sendGymApprovalEmail({ to, gymName, approved }) {
+  console.log('[FRONTEND][EMAIL] Datos enviados:', { to, gymName, approved });
+  const res = await fetch(`${BACKEND_URL}/api/send-gym-approval-email`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ to, gymName, approved })
+  });
+  if (!res.ok) throw new Error('Error enviando correo de aprobación');
+  return await res.json();
+}
+
+// Enviar correo de notificación genérico
+export async function sendNotificationEmail({ to, subject, html }) {
+  const res = await fetch(`${BACKEND_URL}/api/send-notification-email`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ to, subject, html })
+  });
+  if (!res.ok) throw new Error('Error enviando correo de notificación');
+  return await res.json();
 }
